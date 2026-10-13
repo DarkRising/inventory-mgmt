@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Department Inventory & Student Item Issue System</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .login-container {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      position: relative;
+    }
+    .login-card {
+      width: 100%;
+      max-width: 440px;
+      background: var(--bg-card);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 36px;
+      box-shadow: var(--shadow-lg);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-container">
+    <div class="login-card">
+      <div class="text-center mb-4">
+        <div class="brand-icon-box mx-auto mb-3" style="width: 52px; height: 52px; font-size: 1.5rem;">
+          <i class="bi bi-cpu"></i>
+        </div>
+        <h2 class="h4 fw-bold mb-1">Department Inventory</h2>
+        <p class="text-muted small mb-0">MongoDB Edition · Role-Protected Access</p>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert-custom alert-custom-{{ 'danger' if category == 'error' else (category if category in ['success', 'warning', 'info'] else 'info') }} py-2 px-3 small mb-3">
+              <i class="bi bi-exclamation-circle"></i>
+              <div>{{ message }}</div>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form action="{{ url_for('login') }}" method="POST">
+        {% if csrf_token %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        
+        <div class="mb-3">
+          <label class="form-label-custom">Username</label>
+          <div class="input-group">
+            <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary">
+              <i class="bi bi-person"></i>
+            </span>
+            <input type="text" name="username" id="username" class="form-control-custom" placeholder="e.g. coordinator, staff, or student" required autofocus>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label class="form-label-custom mb-0">Password</label>
+            <span class="small text-muted" style="font-size: 0.72rem;">Lockout protected</span>
+          </div>
+          <div class="input-group">
+            <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary">
+              <i class="bi bi-key"></i>
+            </span>
+            <input type="password" name="password" id="password" class="form-control-custom" placeholder="Enter your password" required>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-brand w-100 justify-content-center py-2 mb-3">
+          <i class="bi bi-box-arrow-in-right"></i> Sign In to System
+        </button>
+      </form>
+
+      <!-- Quick Demo Credentials Selector -->
+      <div class="border-top border-secondary border-opacity-25 pt-3 mt-3">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="form-label-custom mb-0" style="font-size: 0.7rem;">Quick Fill Demo Profiles</span>
+          <span class="badge bg-secondary bg-opacity-25 text-secondary" style="font-size: 0.65rem;">MVP Demo</span>
+        </div>
+        <div class="d-flex flex-column gap-2">
+          <button type="button" class="btn btn-glass py-1 px-2 small text-start justify-content-between" onclick="fillCreds('coordinator', 'admin123')">
+            <span class="d-flex align-items-center gap-2">
+              <span class="badge role-coordinator px-2">Coordinator</span>
+              <span class="text-secondary small">Dr. Smith</span>
+            </span>
+            <i class="bi bi-arrow-right-short text-muted"></i>
+          </button>
+          
+          <button type="button" class="btn btn-glass py-1 px-2 small text-start justify-content-between" onclick="fillCreds('staff', 'staff123')">
+            <span class="d-flex align-items-center gap-2">
+              <span class="badge role-staff px-2">Staff</span>
+              <span class="text-secondary small">Lab Tech Alex</span>
+            </span>
+            <i class="bi bi-arrow-right-short text-muted"></i>
+          </button>
+
+          <button type="button" class="btn btn-glass py-1 px-2 small text-start justify-content-between" onclick="fillCreds('student', 'student123')">
+            <span class="d-flex align-items-center gap-2">
+              <span class="badge role-student px-2">Student</span>
+              <span class="text-secondary small">Priya Sharma (2024BCS042)</span>
+            </span>
+            <i class="bi bi-arrow-right-short text-muted"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="mt-4 text-center">
+        <small class="text-muted" style="font-size: 0.72rem;">
+          <i class="bi bi-shield-check text-success me-1"></i> MongoDB Atlas $jsonSchema & Werkzeug PBKDF2 Encrypted
+        </small>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function fillCreds(u, p) {
+      document.getElementById('username').value = u;
+      document.getElementById('password').value = p;
+    }
+  </script>
+</body>
+</html>

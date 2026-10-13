@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+
+{% block title %}Return Processing{% endblock %}
+{% block page_heading %}Process Returns & Condition Auditing{% endblock %}
+{% block page_subheading %}Full & Partial Return Handling with Condition Routing & Quarantining{% endblock %}
+
+{% block content %}
+
+<!-- Return Rules Banner -->
+<div class="glass-card mb-4 py-3">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="brand-icon-box bg-success bg-opacity-25 text-success">
+        <i class="bi bi-box-arrow-in-down-left"></i>
+      </div>
+      <div>
+        <h6 class="text-white fw-bold mb-0">Condition-Based Stock Routing Rules</h6>
+        <small class="text-muted">
+          Returns marked <span class="badge bg-success bg-opacity-25 text-success">Good</span>, <span class="badge bg-info bg-opacity-25 text-info">Fair</span>, or <span class="badge bg-secondary bg-opacity-25 text-secondary">Poor</span> restore to Available. <br>
+          Returns marked <span class="badge bg-danger bg-opacity-25 text-danger">Damaged</span> or <span class="badge bg-warning bg-opacity-25 text-warning">Maintenance</span> move to Quarantine counters and cannot be re-issued until restored.
+        </small>
+      </div>
+    </div>
+    <div class="text-end">
+      <span class="badge bg-dark border border-secondary text-secondary text-mono small">
+        Embedded Doc: issues.returns[]
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Active Issues Eligible for Return -->
+  <div class="col-12 col-xl-7">
+    <div class="glass-card h-100">
+      <div class="glass-card-header">
+        <div class="glass-card-title">
+          <i class="bi bi-clock-history text-cyan"></i>
+          <span>Active Issues Awaiting Return</span>
+        </div>
+        <span class="badge bg-primary text-mono">{{ eligible_issues|length }} Active</span>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table-custom">
+          <thead>
+            <tr>
+              <th>Item / Asset</th>
+              <th>Borrower</th>
+              <th>Outstanding</th>
+              <th>Due Date</th>
+              <th>Status</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for issue in eligible_issues %}
+              {% set rem = issue.qty - issue.returned_qty %}
+              <tr>
+                <td>
+                  <div class="fw-semibold text-white">{{ issue.item_name }}</div>
+                  <small class="text-mono text-cyan">{{ issue.item_code }}</small>
+                  {% if issue.asset_id %}
+                    <span class="badge bg-purple bg-opacity-25 text-light ms-1 text-mono">{{ issue.asset_tag or issue.asset_id }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="small fw-semibold text-white">{{ issue.student_name }}</div>
+                  <small class="text-muted text-mono">{{ issue.student_enrolment }}</small>
+                </td>
+                <td>
+                  <span class="badge bg-warning text-dark fw-bold text-mono fs-6">{{ rem }}</span>
+                  <span class="text-muted small">/ {{ issue.qty }}</span>
+                </td>
+                <td class="text-mono small">
+                  <span class="{{ 'text-danger fw-bold' if issue.due_state == 'overdue' else ('text-warning' if issue.due_state == 'due_soon' else 'text-white') }}">
+                    {{ issue.due_date_str }}
+                  </span>
+                </td>
+                <td>
+                  <span class="badge-status badge-{{ issue.status }}">
+                    {{ issue.status|replace('_', ' ') }}
+                  </span>
+                </td>
+                <td class="text-end">
+                  <button type="button" class="btn btn-brand btn-sm-action" onclick="openReturnModal('{{ issue._id }}', '{{ issue.item_name }}', '{{ issue.student_name }}', {{ issue.qty }}, {{ issue.returned_qty }}, '{{ issue.asset_id or '' }}')">
+                    <i class="bi bi-box-arrow-in-down-left"></i> Receive
+                  </button>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center py-4 text-muted">
+                  <i class="bi bi-check-circle fs-3 text-success d-block mb-1"></i>
+                  No open issues currently awaiting return!
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Embedded Return Receipts -->
+  <div class="col-12 col-xl-5">
+    <div class="glass-card h-100">
+      <div class="glass-card-header">
+        <div class="glass-card-title">
+          <i class="bi bi-receipt text-success"></i>
+          <span>Recent Return Event Receipts</span>
+        </div>
+        <span class="text-muted small">Embedded Log</span>
+      </div>
+
+      <div class="d-flex flex-column gap-2" style="max-height: 520px; overflow-y: auto;">
+        {% for r in return_receipts %}
+          <div class="p-3 rounded bg-dark border border-secondary border-opacity-25">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+              <span class="fw-bold text-white small">{{ r.item_name }}</span>
+              <span class="badge bg-secondary bg-opacity-25 text-mono small">{{ r.return_date_str }}</span>
+            </div>
+            <div class="d-flex align-items-center justify-content-between small text-muted mb-2">
+              <span>Returned by <strong class="text-light">{{ r.student_name }}</strong></span>
+              <span>Accepted Qty: <strong class="text-cyan text-mono">{{ r.qty_returned }}</strong></span>
+            </div>
+            <div class="d-flex align-items-center justify-content-between small">
+              <span class="badge bg-dark border border-secondary text-capitalize">
+                Condition: <strong class="{{ 'text-danger' if r.condition_on_return == 'damaged' else ('text-warning' if r.condition_on_return == 'maintenance' else 'text-success') }}">{{ r.condition_on_return }}</strong>
+              </span>
+              <span class="text-dim" style="font-size: 0.72rem;">Receiver: {{ r.received_by_name }}</span>
+            </div>
+            {% if r.remarks %}
+              <div class="mt-2 pt-2 border-top border-secondary border-opacity-25 small text-secondary fst-italic">
+                "{{ r.remarks }}"
+              </div>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="text-center py-4 text-muted">
+            <i class="bi bi-inbox fs-2 d-block mb-1"></i>
+            No return receipts recorded yet.
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Process Return (Section 2, 4, 8, 14) -->
+<div class="modal fade" id="processReturnModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content modal-content-custom">
+      <div class="modal-header modal-header-custom">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-box-arrow-in-down-left text-success me-2"></i>Process Item Return
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('process_return') }}" method="POST">
+        {% if csrf_token %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        <input type="hidden" name="issue_id" id="return_issue_id">
+        <div class="modal-body modal-body-custom">
+          
+          <div class="p-3 mb-3 rounded bg-dark border border-secondary border-opacity-25">
+            <div class="small text-secondary mb-1">Item & Student:</div>
+            <div class="fw-bold text-white fs-6" id="return_item_title">Item Name</div>
+            <div class="small text-cyan" id="return_student_title">Student Name</div>
+            <div class="mt-2 pt-2 border-top border-secondary border-opacity-25 d-flex justify-content-between small">
+              <span class="text-muted">Total Issued: <strong class="text-white text-mono" id="return_total_qty">0</strong></span>
+              <span class="text-muted">Already Returned: <strong class="text-white text-mono" id="return_already_qty">0</strong></span>
+              <span class="text-warning">Outstanding: <strong class="text-warning text-mono" id="return_remaining_qty">0</strong></span>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label-custom">Quantity Returned Now</label>
+            <input type="number" name="qty_returned" id="return_qty_input" class="form-control-custom text-mono" min="1" value="1" required>
+            <small class="text-muted" id="return_qty_help">Enter amount actually accepted into custody</small>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label-custom">Hardware Condition on Inspection</label>
+            <select name="condition_on_return" id="return_condition_select" class="form-select-custom" required onchange="handleConditionChange(this.value)">
+              <option value="good">Good — Operational (Restores to Available Stock)</option>
+              <option value="fair">Fair — Minor cosmetic wear (Restores to Available Stock)</option>
+              <option value="poor">Poor — Heavy wear (Restores to Available Stock)</option>
+              <option value="damaged">Damaged — Physical fault (Quarantined in Damaged Counter)</option>
+              <option value="maintenance">Maintenance — Needs calibration/service (Quarantined in Maint)</option>
+              <option value="lost">Lost — Unrecovered / missing (Moves to Lost Counter)</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label-custom">Inspector Remarks / Return Notes</label>
+            <input type="text" name="remarks" id="return_remarks" class="form-control-custom" placeholder="e.g. Returned with all cables and breadboard intact">
+          </div>
+
+          <div class="p-2 rounded bg-dark border border-secondary border-opacity-25 small text-muted" id="return_routing_hint">
+            <i class="bi bi-info-circle text-info me-1"></i> Stock will return to available inventory.
+          </div>
+
+        </div>
+        <div class="modal-footer modal-footer-custom">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-brand">Confirm Return Receipt</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function openReturnModal(id, itemName, studentName, totalQty, returnedQty, assetId) {
+    const rem = totalQty - returnedQty;
+    document.getElementById('return_issue_id').value = id;
+    document.getElementById('return_item_title').innerText = itemName + (assetId ? ` [Asset: ${assetId}]` : '');
+    document.getElementById('return_student_title').innerText = studentName;
+    document.getElementById('return_total_qty').innerText = totalQty;
+    document.getElementById('return_already_qty').innerText = returnedQty;
+    document.getElementById('return_remaining_qty').innerText = rem;
+
+    const qtyInput = document.getElementById('return_qty_input');
+    qtyInput.max = rem;
+    qtyInput.value = rem; // Default to full remaining return
+    if (assetId) {
+      qtyInput.value = 1;
+      qtyInput.readOnly = true;
+    } else {
+      qtyInput.readOnly = false;
+    }
+
+    handleConditionChange(document.getElementById('return_condition_select').value);
+    new bootstrap.Modal(document.getElementById('processReturnModal')).show();
+  }
+
+  function handleConditionChange(cond) {
+    const hint = document.getElementById('return_routing_hint');
+    const remarks = document.getElementById('return_remarks');
+
+    if (cond === 'damaged') {
+      hint.innerHTML = '<i class="bi bi-exclamation-triangle text-danger me-1"></i> <strong>Quarantined:</strong> Stock will be routed to damaged inventory counter, not available stock.';
+      remarks.placeholder = 'Mandatory damage description (e.g. broken header pins, blown LED)...';
+    } else if (cond === 'maintenance') {
+      hint.innerHTML = '<i class="bi bi-tools text-warning me-1"></i> <strong>Maintenance:</strong> Stock routed to maintenance counter for technical overhaul.';
+    } else if (cond === 'lost') {
+      hint.innerHTML = '<i class="bi bi-shield-x text-secondary me-1"></i> <strong>Lost:</strong> Stock marked lost. Invariant remains balanced.';
+    } else {
+      hint.innerHTML = '<i class="bi bi-check-circle text-success me-1"></i> <strong>Usable:</strong> Stock will return to available inventory immediately.';
+      remarks.placeholder = 'e.g. Returned in good working order';
+    }
+  }
+
+  // Preselect from URL if provided
+  window.addEventListener('DOMContentLoaded', () => {
+    {% if preselect_issue_id %}
+      const targetBtn = document.querySelector(`button[onclick*="'{{ preselect_issue_id }}'"]`);
+      if (targetBtn) targetBtn.click();
+    {% endif %}
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+
+{% block title %}Issue Management{% endblock %}
+{% block page_heading %}Loan Issuing & Active Allocations{% endblock %}
+{% block page_subheading %}Server-Enforced 15-Day Policy, Availability Check & Atomic Transactions{% endblock %}
+
+{% block topbar_actions %}
+  {% if current_user.role in ['coordinator', 'staff'] %}
+    <button type="button" class="btn btn-brand btn-sm" data-bs-toggle="modal" data-bs-target="#newIssueModal">
+      <i class="bi bi-box-arrow-up-right"></i> Issue New Item
+    </button>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+<!-- Active Issues Summary Pill Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded bg-dark border border-secondary border-opacity-25 text-center">
+      <span class="text-secondary small">Total Issues Created</span>
+      <div class="h4 fw-bold text-white mb-0 text-mono">{{ issues|length }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded bg-dark border border-secondary border-opacity-25 text-center">
+      <span class="text-secondary small">Currently Active</span>
+      <div class="h4 fw-bold text-primary mb-0 text-mono">{{ active_issues_count }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded bg-dark border border-secondary border-opacity-25 text-center">
+      <span class="text-secondary small">Overdue Attention</span>
+      <div class="h4 fw-bold text-danger mb-0 text-mono">{{ overdue_count }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded bg-dark border border-secondary border-opacity-25 text-center">
+      <span class="text-secondary small">Fully Returned</span>
+      <div class="h4 fw-bold text-success mb-0 text-mono">{{ returned_count }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Main Issues Table -->
+<div class="glass-card">
+  <div class="glass-card-header">
+    <div class="glass-card-title">
+      <i class="bi bi-box-arrow-up-right text-info"></i>
+      <span>Hardware Allocations & Loan Registry</span>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <input type="text" id="issuesFilter" class="form-control-custom py-1 px-2 small" placeholder="Filter issues..." style="width: 200px;">
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table-custom" id="issuesTable">
+      <thead>
+        <tr>
+          <th>Item / Asset</th>
+          <th>Student Borrower</th>
+          <th>Qty (Issued / Returned)</th>
+          <th>Purpose</th>
+          <th>Issue Date</th>
+          <th>Due Date</th>
+          <th>Status / Due State</th>
+          <th>Renewals</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for issue in issues %}
+          <tr class="issue-row">
+            <td>
+              <div class="fw-semibold text-white">{{ issue.item_name }}</div>
+              <small class="text-mono text-cyan">{{ issue.item_code }}</small>
+              {% if issue.asset_id %}
+                <span class="badge bg-purple bg-opacity-25 text-light ms-1 text-mono" style="background-color: rgba(139, 92, 246, 0.2);">
+                  <i class="bi bi-tag me-1"></i>{{ issue.asset_tag or issue.asset_id }}
+                </span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="fw-semibold text-white">{{ issue.student_name }}</div>
+              <small class="text-mono text-muted">{{ issue.student_enrolment }}</small>
+            </td>
+            <td>
+              <span class="fw-bold text-white">{{ issue.qty }}</span>
+              {% if issue.returned_qty > 0 %}
+                <span class="text-info small ms-1">({{ issue.returned_qty }} ret)</span>
+              {% endif %}
+              <div class="text-muted small">Rem: {{ issue.qty - issue.returned_qty }}</div>
+            </td>
+            <td class="small text-secondary text-truncate" style="max-width: 160px;" title="{{ issue.purpose }}">
+              {{ issue.purpose or 'Lab coursework' }}
+            </td>
+            <td class="text-mono small">{{ issue.issue_date_str }}</td>
+            <td class="text-mono small">
+              <span class="{{ 'text-danger fw-bold' if issue.due_state == 'overdue' else ('text-warning' if issue.due_state == 'due_soon' else 'text-white') }}">
+                {{ issue.due_date_str }}
+              </span>
+            </td>
+            <td>
+              <div class="d-flex flex-column gap-1">
+                <span class="badge-status badge-{{ issue.status }}">
+                  {{ issue.status|replace('_', ' ') }}
+                </span>
+                {% if issue.status != 'returned' and issue.due_state %}
+                  <span class="badge-status badge-{{ issue.due_state }}" style="font-size: 0.65rem;">
+                    {{ issue.due_state|replace('_', ' ') }}
+                  </span>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <span class="text-mono small text-secondary">
+                {{ issue.renewal_count }} / 2
+              </span>
+            </td>
+            <td class="text-end">
+              {% if issue.status != 'returned' and current_user.role in ['coordinator', 'staff'] %}
+                <div class="btn-group btn-group-sm">
+                  <a href="{{ url_for('returns_view', issue_id=issue._id) }}" class="btn btn-glass btn-sm-action text-success" title="Return Items">
+                    <i class="bi bi-arrow-return-left"></i> Return
+                  </a>
+                  {% if current_user.role == 'coordinator' %}
+                    <a href="{{ url_for('renewals_view', issue_id=issue._id) }}" class="btn btn-glass btn-sm-action text-warning" title="Manage Renewal">
+                      <i class="bi bi-arrow-repeat"></i> Renew
+                    </a>
+                  {% endif %}
+                </div>
+              {% else %}
+                <span class="text-muted small"><i class="bi bi-check-all text-secondary"></i> Complete</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="9" class="text-center py-4 text-muted">No items issued yet. Click "Issue New Item" to allocate hardware.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: New Issue Flow (Section 2, 3, 7, 8, 14) -->
+<div class="modal fade" id="newIssueModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content modal-content-custom">
+      <div class="modal-header modal-header-custom">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-box-arrow-up-right text-primary me-2"></i>Issue Stock to Student
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('create_issue') }}" method="POST">
+        {% if csrf_token %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        <div class="modal-body modal-body-custom">
+          
+          <!-- Server-enforced notice -->
+          <div class="p-2 mb-3 rounded bg-dark border border-info border-opacity-25 small text-info d-flex align-items-center gap-2">
+            <i class="bi bi-shield-check fs-5"></i>
+            <div>
+              <strong>Server-Enforced Business Rules:</strong> Issue date and due date (+15 days default) are calculated on the server from <code class="text-light">inventory_policies</code>. Usable stock availability is checked atomically.
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <!-- Student Picker -->
+            <div class="col-md-6">
+              <label class="form-label-custom">Select Student (Active Enrolments Only)</label>
+              <select name="student_id" class="form-select-custom" required>
+                <option value="">-- Choose Registered Student --</option>
+                {% for st in active_students %}
+                  <option value="{{ st._id }}" {% if preselect_student == (st._id|string) %}selected{% endif %}>
+                    {{ st.name }} ({{ st.enrolment_no }}) - Sem {{ st.semester }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Item Type Selection -->
+            <div class="col-md-6">
+              <label class="form-label-custom">Track Type Mode</label>
+              <select id="issueTypeSelect" class="form-select-custom" onchange="toggleIssueMode(this.value)">
+                <option value="quantity">Quantity-Tracked Inventory</option>
+                <option value="asset">Individually-Tracked Asset</option>
+              </select>
+            </div>
+
+            <!-- Quantity Item Selector -->
+            <div class="col-md-8" id="quantityItemWrapper">
+              <label class="form-label-custom">Quantity Item</label>
+              <select name="item_id" id="issueQuantityItem" class="form-select-custom" onchange="updateMaxQty(this)">
+                <option value="">-- Choose Item with Available Stock --</option>
+                {% for itm in raw_quantity_items %}
+                  <option value="{{ itm._id }}" data-avail="{{ itm.available_qty }}" {% if preselect_item == (itm._id|string) %}selected{% endif %}>
+                    {{ itm.name }} ({{ itm.item_code }}) — [Available: {{ itm.available_qty }}]
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Asset Unit Selector -->
+            <div class="col-md-8" id="assetUnitWrapper" style="display: none;">
+              <label class="form-label-custom">Available Asset Unit (1 Unit Allocation)</label>
+              <select name="asset_id" id="issueAssetUnit" class="form-select-custom">
+                <option value="">-- Choose Available Asset Unit --</option>
+                {% for ast in available_assets %}
+                  <option value="{{ ast._id }}" {% if preselect_asset == (ast._id|string) %}selected{% endif %}>
+                    {{ ast.asset_id }} — {{ ast.item_name }} (SN: {{ ast.serial_no or 'N/A' }}, {{ ast.condition }})
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Quantity Input -->
+            <div class="col-md-4" id="qtyInputWrapper">
+              <label class="form-label-custom">Issue Quantity</label>
+              <input type="number" name="qty" id="issueQtyField" class="form-control-custom text-mono" min="1" value="1" required>
+              <small class="text-muted" id="availNotice"></small>
+            </div>
+
+            <!-- Purpose -->
+            <div class="col-12">
+              <label class="form-label-custom">Lab Coursework Purpose / Experiment</label>
+              <input type="text" name="purpose" class="form-control-custom" placeholder="e.g. Embedded Systems Lab Assignment 3, Microcontroller Project" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer modal-footer-custom">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-brand">
+            <i class="bi bi-check2-circle"></i> Complete Issue
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function toggleIssueMode(mode) {
+    const qWrap = document.getElementById('quantityItemWrapper');
+    const aWrap = document.getElementById('assetUnitWrapper');
+    const qtyField = document.getElementById('issueQtyField');
+    const qtyWrap = document.getElementById('qtyInputWrapper');
+    const qItem = document.getElementById('issueQuantityItem');
+    const aItem = document.getElementById('issueAssetUnit');
+
+    if (mode === 'asset') {
+      qWrap.style.display = 'none';
+      aWrap.style.display = 'block';
+      qItem.required = false;
+      aItem.required = true;
+      qtyField.value = '1';
+      qtyField.readOnly = true;
+      document.getElementById('availNotice').innerText = 'Asset units are strictly 1 quantity';
+    } else {
+      qWrap.style.display = 'block';
+      aWrap.style.display = 'none';
+      qItem.required = true;
+      aItem.required = false;
+      qtyField.readOnly = false;
+      document.getElementById('availNotice').innerText = '';
+    }
+  }
+
+  function updateMaxQty(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    const avail = opt.getAttribute('data-avail');
+    if (avail) {
+      document.getElementById('availNotice').innerText = `Max available: ${avail}`;
+      document.getElementById('issueQtyField').max = avail;
+    }
+  }
+
+  // Quick filter
+  const f = document.getElementById('issuesFilter');
+  if (f) {
+    f.addEventListener('input', function() {
+      const q = this.value.toLowerCase();
+      document.querySelectorAll('.issue-row').forEach(row => {
+        row.style.display = row.innerText.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+  }
+
+  // Pre-selection check on page load
+  window.addEventListener('DOMContentLoaded', () => {
+    {% if preselect_asset %}
+      document.getElementById('issueTypeSelect').value = 'asset';
+      toggleIssueMode('asset');
+      new bootstrap.Modal(document.getElementById('newIssueModal')).show();
+    {% elif preselect_item or preselect_student %}
+      new bootstrap.Modal(document.getElementById('newIssueModal')).show();
+    {% endif %}
+  });
+</script>
+{% endblock %}

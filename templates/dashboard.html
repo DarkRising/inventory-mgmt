@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_heading %}Operational Dashboard{% endblock %}
+{% block page_subheading %}Real-time Inventory Analytics & Active Loan Tracking{% endblock %}
+
+{% block topbar_actions %}
+  {% if current_user.role in ['coordinator', 'staff'] %}
+    <a href="{{ url_for('issues_view') }}" class="btn btn-brand btn-sm">
+      <i class="bi bi-plus-circle"></i> Issue Item
+    </a>
+  {% else %}
+    <a href="{{ url_for('my_items_view') }}" class="btn btn-brand btn-sm">
+      <i class="bi bi-box"></i> View My Loans
+    </a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+<!-- Overdue Warning Alert Banner if Overdue items exist -->
+{% if metrics.overdue_issues_count and metrics.overdue_issues_count > 0 %}
+  <div class="overdue-banner-card animate__animated animate__fadeIn">
+    <div class="d-flex align-items-center gap-3">
+      <div class="brand-icon-box bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50">
+        <i class="bi bi-exclamation-octagon-fill fs-4"></i>
+      </div>
+      <div>
+        <h5 class="text-danger fw-bold mb-1">
+          Attention: {{ metrics.overdue_issues_count }} Active Loan{{ 's' if metrics.overdue_issues_count > 1 else '' }} Overdue!
+        </h5>
+        <p class="text-muted small mb-0">
+          Loans past due date with unreturned quantities detected as of simulated UTC date <span class="text-warning text-mono">{{ simulated_today_str }}</span>.
+        </p>
+      </div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="#overdue-section" class="btn btn-glass btn-sm border-danger text-danger">
+        <i class="bi bi-arrow-down-circle"></i> Review Overdue Loans
+      </a>
+    </div>
+  </div>
+{% endif %}
+
+<!-- KPI Metrics Grid -->
+<div class="row g-3 mb-4">
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="metric-card border-accent-cyan">
+      <div class="metric-icon-box icon-cyan">
+        <i class="bi bi-cpu"></i>
+      </div>
+      <div>
+        <div class="metric-label">Total Catalogue Items</div>
+        <div class="metric-value">{{ metrics.total_items }}</div>
+        <div class="metric-helper">{{ metrics.total_quantity_stock }} quantity units + {{ metrics.total_assets }} asset units</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="metric-card border-accent-purple">
+      <div class="metric-icon-box icon-indigo">
+        <i class="bi bi-box-arrow-up-right"></i>
+      </div>
+      <div>
+        <div class="metric-label">Active Issued Loans</div>
+        <div class="metric-value">{{ metrics.active_issues_count }}</div>
+        <div class="metric-helper">{{ metrics.total_issued_units }} units currently in student custody</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="metric-card border-accent-rose {% if metrics.overdue_issues_count > 0 %}pulse-badge{% endif %}">
+      <div class="metric-icon-box icon-rose">
+        <i class="bi bi-clock-history"></i>
+      </div>
+      <div>
+        <div class="metric-label">Overdue Loans</div>
+        <div class="metric-value text-danger">{{ metrics.overdue_issues_count }}</div>
+        <div class="metric-helper">Require coordinator recall / return</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="metric-card border-accent-amber">
+      <div class="metric-icon-box icon-amber">
+        <i class="bi bi-hourglass-split"></i>
+      </div>
+      <div>
+        <div class="metric-label">Due Soon (≤ 3 Days)</div>
+        <div class="metric-value text-warning">{{ metrics.due_soon_count }}</div>
+        <div class="metric-helper">Within reminder notification window</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- Stock Health & MongoDB Invariant Monitor -->
+  <div class="col-12 col-lg-7">
+    <div class="glass-card h-100">
+      <div class="glass-card-header">
+        <div class="glass-card-title">
+          <i class="bi bi-pie-chart text-info"></i>
+          <span>Stock Health & Invariant Verification</span>
+        </div>
+        <span class="badge bg-dark border border-secondary border-opacity-50 text-secondary text-mono small">
+          Rule: Avail + Issued + Dmg + Lost + Maint = Total
+        </span>
+      </div>
+
+      <div class="mb-4">
+        <div class="d-flex justify-content-between text-muted small mb-1">
+          <span>Overall Inventory Distribution ({{ metrics.stock_health.total }} total items)</span>
+          <span class="text-success fw-bold">{{ metrics.stock_health.available_pct }}% Usable Stock</span>
+        </div>
+        
+        <div class="stock-bar-container" style="height: 18px;">
+          <div class="stock-seg seg-available" style="width: {{ metrics.stock_health.available_pct }}%" title="Available: {{ metrics.stock_health.available }}"></div>
+          <div class="stock-seg seg-issued" style="width: {{ metrics.stock_health.issued_pct }}%" title="Issued: {{ metrics.stock_health.issued }}"></div>
+          <div class="stock-seg seg-damaged" style="width: {{ metrics.stock_health.damaged_pct }}%" title="Damaged: {{ metrics.stock_health.damaged }}"></div>
+          <div class="stock-seg seg-maintenance" style="width: {{ metrics.stock_health.maintenance_pct }}%" title="In Maintenance: {{ metrics.stock_health.maintenance }}"></div>
+          <div class="stock-seg seg-lost" style="width: {{ metrics.stock_health.lost_pct }}%" title="Lost: {{ metrics.stock_health.lost }}"></div>
+        </div>
+
+        <div class="stock-legend">
+          <div class="stock-legend-item">
+            <span class="stock-legend-dot seg-available"></span>
+            <span>Available: <strong class="text-white">{{ metrics.stock_health.available }}</strong></span>
+          </div>
+          <div class="stock-legend-item">
+            <span class="stock-legend-dot seg-issued"></span>
+            <span>Issued: <strong class="text-white">{{ metrics.stock_health.issued }}</strong></span>
+          </div>
+          <div class="stock-legend-item">
+            <span class="stock-legend-dot seg-damaged"></span>
+            <span>Damaged: <strong class="text-white">{{ metrics.stock_health.damaged }}</strong></span>
+          </div>
+          <div class="stock-legend-item">
+            <span class="stock-legend-dot seg-maintenance"></span>
+            <span>Maintenance: <strong class="text-white">{{ metrics.stock_health.maintenance }}</strong></span>
+          </div>
+          <div class="stock-legend-item">
+            <span class="stock-legend-dot seg-lost"></span>
+            <span>Lost: <strong class="text-white">{{ metrics.stock_health.lost }}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Shortcuts -->
+      <div class="border-top border-secondary border-opacity-25 pt-3">
+        <span class="form-label-custom mb-2">Workflow Quick Actions</span>
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{{ url_for('issues_view') }}" class="btn btn-glass btn-sm">
+            <i class="bi bi-plus-lg text-primary"></i> Issue New Item
+          </a>
+          <a href="{{ url_for('returns_view') }}" class="btn btn-glass btn-sm">
+            <i class="bi bi-arrow-return-left text-success"></i> Quick Return
+          </a>
+          {% if current_user.role == 'coordinator' %}
+            <a href="{{ url_for('inventory_view') }}#adjust" class="btn btn-glass btn-sm">
+              <i class="bi bi-wrench text-warning"></i> Adjust / Restore Stock
+            </a>
+            <a href="{{ url_for('policies_view') }}" class="btn btn-glass btn-sm">
+              <i class="bi bi-sliders text-cyan"></i> Loan Policies
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pending Approvals & Policy Summary -->
+  <div class="col-12 col-lg-5">
+    <div class="glass-card h-100">
+      <div class="glass-card-header">
+        <div class="glass-card-title">
+          <i class="bi bi-bell text-warning"></i>
+          <span>Pending Renewal Requests</span>
+        </div>
+        <span class="badge bg-warning text-dark">{{ pending_renewals|length }} Pending</span>
+      </div>
+
+      {% if pending_renewals and pending_renewals|length > 0 %}
+        <div class="d-flex flex-column gap-2 mb-3">
+          {% for r in pending_renewals[:4] %}
+            <div class="p-2 rounded bg-dark border border-secondary border-opacity-25 d-flex align-items-center justify-content-between">
+              <div>
+                <div class="fw-semibold small text-white">{{ r.student_name }}</div>
+                <div class="small text-muted">{{ r.item_name }} ({{ r.qty }} unit{{ 's' if r.qty > 1 else '' }})</div>
+                <div class="text-warning text-mono" style="font-size: 0.72rem;">Requested extension: +15d</div>
+              </div>
+              <div>
+                {% if current_user.role == 'coordinator' %}
+                  <a href="{{ url_for('renewals_view') }}" class="btn btn-brand btn-sm-action">Review</a>
+                {% else %}
+                  <span class="badge badge-pending">Pending Review</span>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="text-center">
+          <a href="{{ url_for('renewals_view') }}" class="btn btn-glass btn-sm w-100">View All Renewal Requests</a>
+        </div>
+      {% else %}
+        <div class="text-center py-4 text-muted">
+          <i class="bi bi-check2-circle fs-1 text-success d-block mb-2"></i>
+          <p class="mb-0 small">No pending renewal requests. All loans are up to date!</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Active Overdue & Due-Soon Action Table -->
+<div class="glass-card mb-4" id="overdue-section">
+  <div class="glass-card-header">
+    <div class="glass-card-title">
+      <i class="bi bi-clock-history text-danger"></i>
+      <span>Overdue & Upcoming Due Loan Items</span>
+    </div>
+    <div class="d-flex gap-2">
+      <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50">
+        {{ open_issues|selectattr('due_state', 'equalto', 'overdue')|list|length }} Overdue
+      </span>
+      <span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50">
+        {{ open_issues|selectattr('due_state', 'equalto', 'due_soon')|list|length }} Due Soon
+      </span>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table-custom">
+      <thead>
+        <tr>
+          <th>Item & Code</th>
+          <th>Student Recipient</th>
+          <th>Qty (Remaining)</th>
+          <th>Issued Date</th>
+          <th>Due Date</th>
+          <th>Days Past Due</th>
+          <th>Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for issue in open_issues %}
+          <tr>
+            <td>
+              <div class="fw-semibold text-white">{{ issue.item_name }}</div>
+              <small class="text-mono text-cyan">{{ issue.item_code }}</small>
+              {% if issue.asset_id %}
+                <span class="badge bg-info bg-opacity-25 text-info ms-1 text-mono">{{ issue.asset_id }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="fw-medium">{{ issue.student_name }}</div>
+              <small class="text-muted text-mono">{{ issue.student_enrolment }}</small>
+            </td>
+            <td>
+              <span class="fw-bold text-white">{{ issue.qty - issue.returned_qty }}</span>
+              <span class="text-muted small">/ {{ issue.qty }}</span>
+            </td>
+            <td class="text-mono small">{{ issue.issue_date_str }}</td>
+            <td class="text-mono small">{{ issue.due_date_str }}</td>
+            <td>
+              {% if issue.days_past_due > 0 %}
+                <span class="text-danger fw-bold text-mono">+{{ issue.days_past_due }} days</span>
+              {% elif issue.days_past_due >= -3 %}
+                <span class="text-warning text-mono">{{ issue.days_past_due|abs }} days left</span>
+              {% else %}
+                <span class="text-success text-mono">{{ issue.days_past_due|abs }} days left</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge-status badge-{{ issue.due_state }}">
+                {{ issue.due_state|replace('_', ' ') }}
+              </span>
+            </td>
+            <td class="text-end">
+              <div class="btn-group btn-group-sm">
+                <a href="{{ url_for('returns_view', issue_id=issue._id) }}" class="btn btn-glass btn-sm-action" title="Process Return">
+                  <i class="bi bi-arrow-return-left text-success"></i> Return
+                </a>
+                {% if current_user.role == 'coordinator' %}
+                  <a href="{{ url_for('renewals_view', issue_id=issue._id) }}" class="btn btn-glass btn-sm-action" title="Renew Loan">
+                    <i class="bi bi-arrow-repeat text-warning"></i> Renew
+                  </a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="8" class="text-center py-4 text-muted">
+              <i class="bi bi-clipboard-check fs-2 d-block mb-1 text-success"></i>
+              No active overdue or due-soon items at this moment.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Recent Append-Only Audit Stream -->
+<div class="glass-card">
+  <div class="glass-card-header">
+    <div class="glass-card-title">
+      <i class="bi bi-shield-lock text-purple"></i>
+      <span>Recent Immutable Audit Activity</span>
+    </div>
+    {% if current_user.role == 'coordinator' %}
+      <a href="{{ url_for('audit_view') }}" class="btn btn-glass btn-sm">Full Audit Trail</a>
+    {% endif %}
+  </div>
+
+  <div class="table-responsive">
+    <table class="table-custom">
+      <thead>
+        <tr>
+          <th>Timestamp (UTC)</th>
+          <th>Action</th>
+          <th>Entity</th>
+          <th>Actor</th>
+          <th>Audit Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in recent_audit %}
+          <tr>
+            <td class="text-mono small text-secondary">{{ a.created_at_str }}</td>
+            <td>
+              <span class="badge bg-dark border border-secondary text-light px-2 py-1 text-mono">{{ a.action }}</span>
+            </td>
+            <td class="text-capitalize small">{{ a.entity_type }}</td>
+            <td class="small text-white">
+              <i class="bi bi-person me-1 text-secondary"></i> {{ a.actor_name }}
+            </td>
+            <td class="small text-muted font-monospace text-truncate" style="max-width: 320px;">
+              {{ a.details_summary }}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="5" class="text-center py-3 text-muted">No audit logs recorded yet.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

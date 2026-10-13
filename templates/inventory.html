@@ -1,0 +1,674 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory Catalogue{% endblock %}
+{% block page_heading %}Inventory Catalogue{% endblock %}
+{% block page_subheading %}Track Quantity Items, Asset-Tracked Hardware & Location Tree{% endblock %}
+
+{% block topbar_actions %}
+  {% if current_user.role == 'coordinator' %}
+    <button type="button" class="btn btn-brand btn-sm" data-bs-toggle="modal" data-bs-target="#addItemModal">
+      <i class="bi bi-plus-lg"></i> Add New Item
+    </button>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+<!-- Tabs: Quantity Items vs Asset Hardware vs Location Hierarchy Tree -->
+<ul class="nav nav-tabs-custom" id="inventoryTabs" role="tablist">
+  <li class="nav-item">
+    <a class="tab-item active" id="quantity-tab" data-bs-toggle="tab" href="#quantity-pane" role="tab">
+      <i class="bi bi-layers"></i> Quantity-Tracked Items ({{ quantity_items|length }})
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="tab-item" id="asset-tab" data-bs-toggle="tab" href="#asset-pane" role="tab">
+      <i class="bi bi-cpu"></i> Asset-Tracked Units ({{ assets|length }})
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="tab-item" id="locations-tab" data-bs-toggle="tab" href="#locations-pane" role="tab">
+      <i class="bi bi-diagram-3"></i> Location Hierarchy Tree
+    </a>
+  </li>
+</ul>
+
+<!-- Search & Filter Controls -->
+<div class="glass-card mb-4 py-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-12 col-md-5">
+      <div class="input-group">
+        <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary">
+          <i class="bi bi-search"></i>
+        </span>
+        <input type="text" id="inventorySearch" class="form-control-custom" placeholder="Search by item code, name, category, or location...">
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <select id="categoryFilter" class="form-select-custom">
+        <option value="">All Categories</option>
+        {% for cat in categories %}
+          <option value="{{ cat }}">{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-4 text-md-end">
+      <span class="text-secondary small">
+        <i class="bi bi-shield-check text-success"></i> Atomic Updates & $jsonSchema Invariants Active
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="tab-content" id="inventoryTabContent">
+
+  <!-- ================= Tab 1: Quantity-Tracked Items ================= -->
+  <div class="tab-pane fade show active" id="quantity-pane" role="tabpanel">
+    <div class="glass-card">
+      <div class="glass-card-header">
+        <div class="glass-card-title">
+          <i class="bi bi-boxes text-info"></i>
+          <span>Quantity-Tracked Inventory Items</span>
+        </div>
+        <span class="text-muted small">Six stock counters maintained with strict invariant equality</span>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table-custom" id="quantityTable">
+          <thead>
+            <tr>
+              <th>Code & Name</th>
+              <th>Category</th>
+              <th>Location</th>
+              <th>Available</th>
+              <th>Issued</th>
+              <th>Damaged</th>
+              <th>Maint.</th>
+              <th>Lost</th>
+              <th>Total Stock</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in quantity_items %}
+              <tr class="item-row" data-category="{{ item.category }}">
+                <td>
+                  <div class="fw-semibold text-white">{{ item.name }}</div>
+                  <span class="text-mono text-cyan small">{{ item.item_code }}</span>
+                  {% if item.is_retired %}
+                    <span class="badge bg-secondary ms-1">Retired</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="badge bg-dark border border-secondary border-opacity-50 text-secondary">{{ item.category }}</span>
+                </td>
+                <td class="small text-muted">
+                  <i class="bi bi-geo-alt me-1"></i>{{ item.location_path or item.location_name }}
+                </td>
+                <td>
+                  <span class="badge bg-success bg-opacity-25 text-success fw-bold px-2 py-1 fs-6">
+                    {{ item.available_qty }}
+                  </span>
+                </td>
+                <td class="text-mono text-indigo fw-semibold">{{ item.issued_qty }}</td>
+                <td class="text-mono {{ 'text-danger fw-bold' if item.damaged_qty > 0 else 'text-muted' }}">{{ item.damaged_qty }}</td>
+                <td class="text-mono {{ 'text-warning fw-bold' if item.maintenance_qty > 0 else 'text-muted' }}">{{ item.maintenance_qty }}</td>
+                <td class="text-mono text-muted">{{ item.lost_qty }}</td>
+                <td class="fw-bold text-white text-mono">{{ item.total_qty }}</td>
+                <td class="text-end">
+                  <div class="btn-group btn-group-sm">
+                    {% if current_user.role in ['coordinator', 'staff'] %}
+                      <a href="{{ url_for('issues_view', preselect_item=item._id) }}" class="btn btn-glass btn-sm-action text-info" title="Issue to Student">
+                        <i class="bi bi-box-arrow-up-right"></i> Issue
+                      </a>
+                    {% endif %}
+                    {% if current_user.role == 'coordinator' %}
+                      <button type="button" 
+                              class="btn btn-glass btn-sm-action"
+                              data-id="{{ item._id }}"
+                              data-name="{{ item.name }}"
+                              data-avail="{{ item.available_qty }}"
+                              data-damaged="{{ item.damaged_qty }}"
+                              data-maint="{{ item.maintenance_qty }}"
+                              onclick="openAdjustModal(this)">
+                        <i class="bi bi-sliders"></i> Adjust
+                      </button>
+                      {% if item.damaged_qty > 0 or item.maintenance_qty > 0 %}
+                        <button type="button" 
+                                class="btn btn-glass btn-sm-action text-success"
+                                data-id="{{ item._id }}"
+                                data-name="{{ item.name }}"
+                                data-damaged="{{ item.damaged_qty }}"
+                                data-maint="{{ item.maintenance_qty }}"
+                                onclick="openRestoreModal(this)">
+                          <i class="bi bi-arrow-clockwise"></i> Restore
+                        </button>
+                      {% endif %}
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="10" class="text-center py-4 text-muted">No quantity items registered yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Tab 2: Asset-Tracked Units ================= -->
+  <div class="tab-pane fade" id="asset-pane" role="tabpanel">
+    <div class="glass-card">
+      <div class="glass-card-header">
+        <div class="glass-card-title">
+          <i class="bi bi-cpu text-purple"></i>
+          <span>Individually Tracked Assets (One Document Per Unit)</span>
+        </div>
+        {% if current_user.role == 'coordinator' %}
+          <button type="button" class="btn btn-glass btn-sm" data-bs-toggle="modal" data-bs-target="#addAssetModal">
+            <i class="bi bi-plus-circle"></i> Register Unit / Serial
+          </button>
+        {% endif %}
+      </div>
+
+      <div class="table-responsive">
+        <table class="table-custom" id="assetTable">
+          <thead>
+            <tr>
+              <th>Asset Tag / ID</th>
+              <th>Parent Item Model</th>
+              <th>Serial Number</th>
+              <th>Current Location</th>
+              <th>Hardware Condition</th>
+              <th>Asset Status</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for asset in assets %}
+              <tr class="asset-row">
+                <td>
+                  <span class="text-mono fw-bold text-cyan">{{ asset.asset_id }}</span>
+                </td>
+                <td>
+                  <div class="fw-semibold text-white">{{ asset.item_name }}</div>
+                  <small class="text-muted text-mono">{{ asset.item_code }}</small>
+                </td>
+                <td class="text-mono small text-secondary">{{ asset.serial_no or 'N/A' }}</td>
+                <td class="small text-muted">{{ asset.location_path or asset.location_name }}</td>
+                <td>
+                  <span class="badge bg-dark border border-secondary text-secondary text-capitalize">
+                    {{ asset.condition }}
+                  </span>
+                </td>
+                <td>
+                  <span class="badge-status badge-{{ asset.status }}">
+                    {{ asset.status }}
+                  </span>
+                </td>
+                <td class="text-end">
+                  <div class="btn-group btn-group-sm">
+                    {% if asset.status == 'available' and current_user.role in ['coordinator', 'staff'] %}
+                      <a href="{{ url_for('issues_view', preselect_asset=asset._id) }}" class="btn btn-glass btn-sm-action text-info" title="Issue Asset">
+                        <i class="bi bi-box-arrow-up-right"></i> Issue
+                      </a>
+                    {% endif %}
+                    {% if current_user.role == 'coordinator' and asset.status in ['damaged', 'maintenance'] %}
+                      <button type="button" 
+                              class="btn btn-glass btn-sm-action text-success"
+                              data-id="{{ asset._id }}"
+                              data-tag="{{ asset.asset_id }}"
+                              data-status="{{ asset.status }}"
+                              onclick="openRestoreAssetModal(this)">
+                        <i class="bi bi-arrow-clockwise"></i> Restore
+                      </button>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="7" class="text-center py-4 text-muted">No individual assets registered yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Tab 3: Location Hierarchy Tree ================= -->
+  <div class="tab-pane fade" id="locations-pane" role="tabpanel">
+    <div class="glass-card">
+      <div class="glass-card-header">
+        <div class="glass-card-title">
+          <i class="bi bi-diagram-3 text-cyan"></i>
+          <span>Location Hierarchy Tree (Department > Lab > Room > Cupboard)</span>
+        </div>
+        {% if current_user.role == 'coordinator' %}
+          <button type="button" class="btn btn-glass btn-sm" data-bs-toggle="modal" data-bs-target="#addLocationModal">
+            <i class="bi bi-plus-circle"></i> Add Location Node
+          </button>
+        {% endif %}
+      </div>
+
+      <div class="row g-3">
+        {% for loc in locations_tree %}
+          <div class="col-12 col-md-6 col-xl-4">
+            <div class="p-3 rounded bg-dark border border-secondary border-opacity-25 h-100">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="fw-bold text-white fs-6">
+                  <i class="bi bi-building text-primary me-2"></i>{{ loc.name }}
+                </span>
+                <span class="badge bg-secondary bg-opacity-25 text-secondary text-capitalize">{{ loc.loc_type }}</span>
+              </div>
+              {% if loc.children %}
+                <ul class="list-unstyled ps-3 border-start border-secondary border-opacity-50 small my-2">
+                  {% for child in loc.children %}
+                    <li class="py-1">
+                      <div class="d-flex align-items-center justify-content-between">
+                        <span class="text-secondary"><i class="bi bi-door-closed me-1"></i>{{ child.name }}</span>
+                        <span class="badge bg-dark text-muted" style="font-size: 0.65rem;">{{ child.loc_type }}</span>
+                      </div>
+                      {% if child.children %}
+                        <ul class="list-unstyled ps-3 border-start border-secondary border-opacity-25 my-1">
+                          {% for sub in child.children %}
+                            <li class="py-1 text-muted">
+                              <i class="bi bi-archive me-1 text-info"></i>{{ sub.name }} ({{ sub.loc_type }})
+                            </li>
+                          {% endfor %}
+                        </ul>
+                      {% endif %}
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="text-muted small mb-0 fst-italic">No sub-locations configured</p>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ================= MODALS ================= -->
+
+<!-- Modal: Add Item (Coordinator Only) -->
+<div class="modal fade" id="addItemModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content modal-content-custom">
+      <div class="modal-header modal-header-custom">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-plus-square text-primary me-2"></i>Create Catalogue Item
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('create_item') }}" method="POST">
+        {% if csrf_token %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        <div class="modal-body modal-body-custom">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label-custom">Item Code (Unique)</label>
+              <input type="text" name="item_code" class="form-control-custom text-mono" placeholder="e.g. RPI-4B-8G" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-custom">Item Name</label>
+              <input type="text" name="name" class="form-control-custom" placeholder="e.g. Raspberry Pi 4 Model B (8GB RAM)" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-custom">Category</label>
+              <input type="text" name="category" class="form-control-custom" placeholder="e.g. Microcontrollers, Sensors, Cables" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-custom">Tracking Type</label>
+              <select name="tracking_type" id="modalTrackingType" class="form-select-custom" required onchange="toggleQtyInput(this.value)">
+                <option value="quantity">Quantity-Tracked (Counters: Available, Issued, etc.)</option>
+                <option value="asset">Asset-Tracked (Individual units with serial number)</option>
+              </select>
+            </div>
+            <div class="col-md-6" id="initialQtyGroup">
+              <label class="form-label-custom">Initial Stock Quantity</label>
+              <input type="number" name="initial_qty" id="initial_qty" class="form-control-custom" min="1" value="10">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-custom">Location</label>
+              <select name="location_id" class="form-select-custom" required>
+                {% for loc in raw_locations %}
+                  <option value="{{ loc._id }}">{{ loc.name }} ({{ loc.loc_type }})</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label-custom">Description & Specifications</label>
+              <textarea name="description" class="form-control-custom" rows="2" placeholder="Lab use specifications, warnings..."></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer modal-footer-custom">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-brand">Create Item</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Adjust Stock (Section 2, 4, 8: mandatory reason min 3 chars) -->
+<div class="modal fade" id="adjustStockModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content modal-content-custom">
+      <div class="modal-header modal-header-custom">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-sliders text-warning me-2"></i>Stock Adjustment
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('adjust_stock') }}" method="POST">
+        {% if csrf_token %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        <input type="hidden" name="item_id" id="adjust_item_id">
+        <div class="modal-body modal-body-custom">
+          <div class="p-2 mb-3 rounded bg-dark border border-secondary border-opacity-25">
+            <span class="text-secondary small">Item:</span>
+            <div class="fw-bold text-white" id="adjust_item_name">Loading...</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Adjustment Type</label>
+            <select name="adjustment_type" class="form-select-custom" required>
+              <option value="new_stock">New Stock Delivery (+)</option>
+              <option value="damage">Mark Stock Damaged (Moves to Damaged)</option>
+              <option value="maintenance">Send to Maintenance (Moves to Maint)</option>
+              <option value="lost">Mark Stock Lost (Moves to Lost)</option>
+              <option value="correction">Inventory Audit Correction</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Quantity</label>
+            <input type="number" name="qty_change" class="form-control-custom" min="1" value="1" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Mandatory Reason (Min 3 characters)</label>
+            <input type="text" name="reason" class="form-control-custom" placeholder="e.g. Lab batch procurement, damaged in testing" minlength="3" required>
+          </div>
+        </div>
+        <div class="modal-footer modal-footer-custom">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-brand">Apply Atomic Adjustment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Restore Stock (Section 2, 8, 12: Coordinator Restores Damaged/Maint to Available) -->
+<div class="modal fade" id="restoreStockModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content modal-content-custom">
+      <div class="modal-header modal-header-custom">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-arrow-clockwise text-success me-2"></i>Restore Quarantined Stock
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('restore_stock') }}" method="POST">
+        {% if csrf_token %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        <input type="hidden" name="item_id" id="restore_item_id">
+        <div class="modal-body modal-body-custom">
+          <div class="p-2 mb-3 rounded bg-dark border border-secondary border-opacity-25">
+            <span class="text-secondary small">Item:</span>
+            <div class="fw-bold text-white" id="restore_item_name">Loading...</div>
+            <div class="small text-muted" id="restore_counters_info"></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Restore Source</label>
+            <select name="source_counter" id="restore_source" class="form-select-custom" required>
+              <option value="damaged">Damaged Stock Counter</option>
+              <option value="maintenance">Maintenance Stock Counter</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Quantity to Restore to Available</label>
+            <input type="number" name="qty" id="restore_qty" class="form-control-custom" min="1" value="1" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Mandatory Restoration Reason (Min 3 chars)</label>
+            <input type="text" name="reason" class="form-control-custom" placeholder="e.g. Repaired and tested by technician" minlength="3" required>
+          </div>
+        </div>
+        <div class="modal-footer modal-footer-custom">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-brand">Restore to Usable Stock</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add Asset Unit (For individually tracked items) -->
+<div class="modal fade" id="addAssetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content modal-content-custom">
+      <div class="modal-header modal-header-custom">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-tag text-purple me-2"></i>Register Asset Unit
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('create_asset') }}" method="POST">
+        {% if csrf_token %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        <div class="modal-body modal-body-custom">
+          <div class="mb-3">
+            <label class="form-label-custom">Parent Item</label>
+            <select name="item_id" class="form-select-custom" required>
+              {% for itm in raw_asset_items %}
+                <option value="{{ itm._id }}">{{ itm.name }} ({{ itm.item_code }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Asset Tag ID (Unique, e.g. DB-014)</label>
+            <input type="text" name="asset_id" class="form-control-custom text-mono" placeholder="e.g. DB-014 or AST-OSC-003" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Serial Number (Unique per item)</label>
+            <input type="text" name="serial_no" class="form-control-custom text-mono" placeholder="e.g. SN-89214732" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Initial Condition</label>
+            <select name="condition" class="form-select-custom" required>
+              <option value="good">Good (Fully functional)</option>
+              <option value="fair">Fair (Cosmetic wear)</option>
+              <option value="poor">Poor</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Location</label>
+            <select name="location_id" class="form-select-custom" required>
+              {% for loc in raw_locations %}
+                <option value="{{ loc._id }}">{{ loc.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer modal-footer-custom">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-brand">Register Unit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add Location Node -->
+<div class="modal fade" id="addLocationModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content modal-content-custom">
+      <div class="modal-header modal-header-custom">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-diagram-3 text-cyan me-2"></i>Add Location Node
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('create_location') }}" method="POST">
+        {% if csrf_token %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        <div class="modal-body modal-body-custom">
+          <div class="mb-3">
+            <label class="form-label-custom">Location Name</label>
+            <input type="text" name="name" class="form-control-custom" placeholder="e.g. Robotics Bay B, Cupboard C-03" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Location Type</label>
+            <select name="loc_type" class="form-select-custom" required>
+              <option value="department">Department</option>
+              <option value="laboratory">Laboratory</option>
+              <option value="room">Room</option>
+              <option value="cupboard">Cupboard / Shelf</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Parent Location (Optional - Tree Structure)</label>
+            <select name="parent_id" class="form-select-custom">
+              <option value="">None (Top-Level Department)</option>
+              {% for loc in raw_locations %}
+                <option value="{{ loc._id }}">{{ loc.name }} ({{ loc.loc_type }})</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer modal-footer-custom">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-brand">Save Location</button>
+        </div>
+      </form>
+    </div>
+  </div>
+<!-- Modal: Restore Asset Unit -->
+<div class="modal fade" id="restoreAssetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content modal-content-custom">
+      <div class="modal-header modal-header-custom">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-arrow-clockwise text-success me-2"></i>Restore Quarantined Asset Unit
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('inventory.restore_asset') }}" method="POST">
+        {% if csrf_token %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+        <input type="hidden" name="asset_id" id="restore_asset_id">
+        <div class="modal-body modal-body-custom">
+          <div class="p-2 mb-3 rounded bg-dark border border-secondary border-opacity-25">
+            <span class="text-secondary small">Asset Unit:</span>
+            <div class="fw-bold text-cyan" id="restore_asset_tag">Loading...</div>
+            <div class="small text-muted">Current Status: <span class="text-warning text-capitalize" id="restore_asset_status"></span></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-custom">Mandatory Restoration Reason (Min 3 chars)</label>
+            <input type="text" name="reason" class="form-control-custom" placeholder="e.g. Recalibrated and certified functional" minlength="3" required>
+          </div>
+          <small class="text-muted d-block">
+            <i class="bi bi-info-circle me-1"></i> Restoring returns this serialized unit to <strong>available</strong> status in <strong>good</strong> condition.
+          </small>
+        </div>
+        <div class="modal-footer modal-footer-custom">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-brand">Restore to Available</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function toggleQtyInput(val) {
+    const qtyGroup = document.getElementById('initialQtyGroup');
+    if (val === 'asset') {
+      qtyGroup.style.display = 'none';
+    } else {
+      qtyGroup.style.display = 'block';
+    }
+  }
+
+  function openAdjustModal(btnOrId, name, avail, dmg, maint) {
+    let id = btnOrId;
+    if (typeof btnOrId === 'object' && btnOrId && btnOrId.dataset) {
+      id = btnOrId.dataset.id;
+      name = btnOrId.dataset.name;
+    }
+    document.getElementById('adjust_item_id').value = id;
+    document.getElementById('adjust_item_name').innerText = name || 'Item';
+    new bootstrap.Modal(document.getElementById('adjustStockModal')).show();
+  }
+
+  function openRestoreModal(btnOrId, name, dmg, maint) {
+    let id = btnOrId;
+    if (typeof btnOrId === 'object' && btnOrId && btnOrId.dataset) {
+      id = btnOrId.dataset.id;
+      name = btnOrId.dataset.name;
+      dmg = btnOrId.dataset.damaged || 0;
+      maint = btnOrId.dataset.maint || 0;
+    }
+    document.getElementById('restore_item_id').value = id;
+    document.getElementById('restore_item_name').innerText = name || 'Item';
+    document.getElementById('restore_counters_info').innerText = `Damaged: ${dmg} | Maintenance: ${maint}`;
+    new bootstrap.Modal(document.getElementById('restoreStockModal')).show();
+  }
+
+  function openRestoreAssetModal(btnOrId, tag, status) {
+    let id = btnOrId;
+    if (typeof btnOrId === 'object' && btnOrId && btnOrId.dataset) {
+      id = btnOrId.dataset.id;
+      tag = btnOrId.dataset.tag;
+      status = btnOrId.dataset.status;
+    }
+    document.getElementById('restore_asset_id').value = id;
+    document.getElementById('restore_asset_tag').innerText = tag || 'Unit';
+    document.getElementById('restore_asset_status').innerText = status || 'Quarantined';
+    new bootstrap.Modal(document.getElementById('restoreAssetModal')).show();
+  }
+
+  // Client-side quick filter
+  const searchInput = document.getElementById('inventorySearch');
+  const catFilter = document.getElementById('categoryFilter');
+
+  function filterTables() {
+    const q = (searchInput ? searchInput.value : '').toLowerCase();
+    const cat = (catFilter ? catFilter.value : '');
+
+    document.querySelectorAll('.item-row').forEach(row => {
+      const text = row.innerText.toLowerCase();
+      const rowCat = row.getAttribute('data-category');
+      const matchesQ = text.includes(q);
+      const matchesCat = !cat || rowCat === cat;
+      row.style.display = (matchesQ && matchesCat) ? '' : 'none';
+    });
+
+    document.querySelectorAll('.asset-row').forEach(row => {
+      const text = row.innerText.toLowerCase();
+      row.style.display = text.includes(q) ? '' : 'none';
+    });
+  }
+
+  if (searchInput) searchInput.addEventListener('input', filterTables);
+  if (catFilter) catFilter.addEventListener('change', filterTables);
+</script>
+{% endblock %}

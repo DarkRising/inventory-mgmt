@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Trail{% endblock %}
+{% block page_heading %}Append-Only Audit Trail{% endblock %}
+{% block page_subheading %}Tamper-Resistant Activity Logging & State Change Audit (Section 7 & 8){% endblock %}
+
+{% block content %}
+
+<!-- Tamper Resistance & Security Notice -->
+<div class="glass-card mb-4 py-3">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="brand-icon-box bg-purple bg-opacity-25 text-purple" style="color: #c084fc;">
+        <i class="bi bi-shield-lock-fill"></i>
+      </div>
+      <div>
+        <h6 class="text-white fw-bold mb-1">Immutable Audit Trail Governance</h6>
+        <p class="text-muted small mb-0">
+          The <code class="text-light">audit_log</code> collection is insert-and-find only. Every state transition (issue, return, renewal, and stock adjustment) is written inside the atomic transaction that executed it.
+        </p>
+      </div>
+    </div>
+    <div>
+      <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-2">
+        <i class="bi bi-lock-fill me-1"></i> No Delete / Update Allowed
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- Filters Bar -->
+<div class="glass-card mb-4 py-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-12 col-md-4">
+      <input type="text" id="auditSearch" class="form-control-custom" placeholder="Search actor, action, or details...">
+    </div>
+    <div class="col-6 col-md-3">
+      <select id="actionFilter" class="form-select-custom">
+        <option value="">All Actions</option>
+        <option value="ISSUE">ISSUE</option>
+        <option value="RETURN">RETURN</option>
+        <option value="RENEWAL_REQUEST">RENEWAL_REQUEST</option>
+        <option value="RENEWAL_APPROVE">RENEWAL_APPROVE</option>
+        <option value="RENEWAL_REJECT">RENEWAL_REJECT</option>
+        <option value="STOCK_ADJUST">STOCK_ADJUST</option>
+        <option value="RESTORE">RESTORE</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-3">
+      <select id="entityFilter" class="form-select-custom">
+        <option value="">All Entities</option>
+        <option value="issue">issue</option>
+        <option value="renewal">renewal</option>
+        <option value="item">item</option>
+        <option value="asset">asset</option>
+        <option value="student">student</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-2 text-md-end text-muted small">
+      <span id="auditCount">{{ audit_logs|length }}</span> Records
+    </div>
+  </div>
+</div>
+
+<!-- Audit Table -->
+<div class="glass-card">
+  <div class="glass-card-header">
+    <div class="glass-card-title">
+      <i class="bi bi-journal-code text-cyan"></i>
+      <span>Transaction Ledger</span>
+    </div>
+    <span class="text-muted small text-mono">Index: (entity_type, entity_id), (user_id, created_at)</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table-custom" id="auditTable">
+      <thead>
+        <tr>
+          <th>Timestamp (UTC)</th>
+          <th>Action</th>
+          <th>Entity Type</th>
+          <th>Entity ObjectId</th>
+          <th>Actor (User)</th>
+          <th>IP Address</th>
+          <th>Details Summary</th>
+          <th class="text-end">Payload</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in audit_logs %}
+          <tr class="audit-row" data-action="{{ log.action }}" data-entity="{{ log.entity_type }}">
+            <td class="text-mono small text-secondary">{{ log.created_at_str }}</td>
+            <td>
+              <span class="badge bg-dark border border-secondary text-mono text-cyan fw-bold">
+                {{ log.action }}
+              </span>
+            </td>
+            <td class="small text-capitalize">{{ log.entity_type }}</td>
+            <td class="text-mono small text-dim">{{ log.entity_id or '—' }}</td>
+            <td class="small text-white">
+              <i class="bi bi-person me-1 text-secondary"></i>{{ log.actor_name or log.user_id }}
+            </td>
+            <td class="text-mono small text-muted">{{ log.ip_address or '127.0.0.1' }}</td>
+            <td class="small text-muted text-truncate" style="max-width: 260px;">
+              {{ log.details_summary }}
+            </td>
+            <td class="text-end">
+              <button type="button" class="btn btn-glass btn-sm-action text-info" onclick="inspectPayload('{{ log._id }}', '{{ log.action }}', '{{ log.entity_type }}', '{{ log.created_at_str }}', {{ log.details_json|tojson }})">
+                <i class="bi bi-eye"></i> JSON
+              </button>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="8" class="text-center py-4 text-muted">No audit events logged yet.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: Inspect JSON Payload -->
+<div class="modal fade" id="inspectModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content modal-content-custom">
+      <div class="modal-header modal-header-custom">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-file-earmark-code text-cyan me-2"></i>Audit Entry Payload Inspector
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body modal-body-custom">
+        <div class="d-flex align-items-center justify-content-between mb-3 p-2 rounded bg-dark border border-secondary border-opacity-25 small">
+          <div>Action: <strong class="text-cyan text-mono" id="modalAction"></strong></div>
+          <div>Entity: <strong class="text-white text-mono" id="modalEntity"></strong></div>
+          <div>Logged: <span class="text-secondary text-mono" id="modalTime"></span></div>
+        </div>
+        <label class="form-label-custom">Raw Embedded BSON Document (Normalized JSON)</label>
+        <pre class="p-3 rounded bg-dark border border-secondary border-opacity-50 text-light text-mono small mb-0" id="jsonPayloadDisplay" style="max-height: 350px; overflow-y: auto;"></pre>
+      </div>
+      <div class="modal-footer modal-footer-custom">
+        <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function inspectPayload(id, action, entity, time, details) {
+    document.getElementById('modalAction').innerText = action;
+    document.getElementById('modalEntity').innerText = entity;
+    document.getElementById('modalTime').innerText = time;
+    document.getElementById('jsonPayloadDisplay').innerText = JSON.stringify(details, null, 2);
+    new bootstrap.Modal(document.getElementById('inspectModal')).show();
+  }
+
+  // Filter handlers
+  const search = document.getElementById('auditSearch');
+  const actionSel = document.getElementById('actionFilter');
+  const entitySel = document.getElementById('entityFilter');
+
+  function filterAudit() {
+    const q = (search.value || '').toLowerCase();
+    const act = actionSel.value;
+    const ent = entitySel.value;
+    let visible = 0;
+
+    document.querySelectorAll('.audit-row').forEach(row => {
+      const text = row.innerText.toLowerCase();
+      const rowAct = row.getAttribute('data-action');
+      const rowEnt = row.getAttribute('data-entity');
+
+      const matchesQ = text.includes(q);
+      const matchesAct = !act || rowAct === act;
+      const matchesEnt = !ent || rowEnt === ent;
+
+      if (matchesQ && matchesAct && matchesEnt) {
+        row.style.display = '';
+        visible++;
+      } else {
+        row.style.display = 'none';
+      }
+    });
+
+    document.getElementById('auditCount').innerText = visible;
+  }
+
+  search.addEventListener('input', filterAudit);
+  actionSel.addEventListener('change', filterAudit);
+  entitySel.addEventListener('change', filterAudit);
+</script>
+{% endblock %}
